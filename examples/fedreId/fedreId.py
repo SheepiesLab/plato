@@ -8,6 +8,7 @@ from torchvision.transforms import ToTensor
 from plato.datasources import base
 from plato.trainers import basic
 
+
 class DataSource(base.DataSource):
     """A custom datasource with custom training and validation
        datasets.
@@ -23,6 +24,7 @@ class DataSource(base.DataSource):
                              train=False,
                              download=True,
                              transform=ToTensor())
+
 
 class Trainer(basic.Trainer):
     # pylint: disable=unused-argument
@@ -72,7 +74,7 @@ class Trainer(basic.Trainer):
 
         accuracy = correct / total
         return accuracy
-    
+
     def test_output(self, config, testset):  # pylint: disable=unused-argument
         """A custom testing loop. """
         test_loader = torch.utils.data.DataLoader(
@@ -90,5 +92,5 @@ class Trainer(basic.Trainer):
                 outputs = self.model(examples)
                 _, predicted = torch.max(outputs.data, 1)
                 result.append(predicted)
-                
+
         return result
