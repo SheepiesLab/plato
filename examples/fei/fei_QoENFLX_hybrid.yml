@@ -6,7 +6,7 @@ clients:
     per_round: 10
 
     # Whether select variable number of clients per round
-    varied: false
+    varied: true
 
     # Should the clients compute test accuracy locally?
     do_test: false
@@ -16,31 +16,31 @@ clients:
 
 server:
     address: 127.0.0.1
-    port: 8080
+    port: 8000
 
 data:
     # The training and testing dataset
-    datasource: FashionMNIST
+    datasource: QoENFLX
 
     # Where the dataset is located
     data_path: ./data
 
     # Number of samples in each partition
-    partition_size: 200
+    partition_size: 30
 
     # Whether use varied partition per client or not?
-    varied: true
+    varied: false
 
     # IID or non-IID?
-    sampler: noniid
-
-    # The concentration parameter for the Dirichlet distribution
-    concentration: 0.5
+    sampler: iid
 
     # The random seed for sampling data
     random_seed: 1
 
 trainer:
+    # The type of the trainer
+    type: qoenflx
+
     # The maximum number of training rounds
     rounds: 50
 
@@ -51,22 +51,23 @@ trainer:
     max_concurrency: 4
 
     # The target accuracy
-    target_accuracy: 1.0
+    target_accuracy: 0.99
 
     # Number of epoches for local training in each communication round
-    epochs: 10
+    epochs: 50
 
     # Whether use varied epochs per client or not?
-    varied: true
+    varied: false
 
-    batch_size: 32
-    optimizer: SGD
-    learning_rate: 0.01
-    momentum: 0.9
-    weight_decay: 0.0
+    batch_size: 64
+    optimizer: Adadelta
+    learning_rate: 1.0
+    rho: 0.95
+    eps: 0.000001
+    weight_decay: 0.000001
 
     # The machine learning model
-    model_name: lenet5
+    model_name: hybrid
 
 algorithm:
     # Aggregation algorithm
@@ -84,7 +85,7 @@ algorithm:
     log_interval: 10
     mode: test  # test
     pretrained: true
-    pretrained_iter: 300
+    pretrained_iter: 150
     test_step: 50
 
     # RL policy
@@ -116,5 +117,3 @@ results:
 
     # Plot results (x_axis&y_axis)
     plot: round&accuracy, round&training_time, round_time&accuracy, round_time&training_time
-
-

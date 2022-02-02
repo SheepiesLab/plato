@@ -59,6 +59,8 @@ class RLServer(simple_rl_server.RLServer):
         }
         self.smart_weighting = self.normalize_weights(
             self.smart_weighting[:self.clients_per_round])
+        
+        print(self.smart_weighting)
 
         # Use adaptive weighted average
         for i, update in enumerate(weights_received):

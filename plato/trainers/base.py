@@ -123,7 +123,7 @@ class Trainer(ABC):
                 os.remove(accuracy_file)
 
     @abstractmethod
-    def train(self, trainset, sampler, cut_layer=None) -> float:
+    def train(self, trainset, sampler, varied_epochs=1, cut_layer=None) -> float:
         """The main training loop in a federated learning workload.
 
         Arguments:

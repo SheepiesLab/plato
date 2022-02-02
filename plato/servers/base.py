@@ -285,7 +285,10 @@ class Server:
                 logging.info("[Server #%d] Selecting client #%d for training.",
                              os.getpid(), selected_client_id)
 
-                server_response = {'id': selected_client_id}
+                server_response = {
+                    'id': selected_client_id,
+                    'current_round': self.current_round
+                }
                 server_response = await self.customize_server_response(
                     server_response)
 

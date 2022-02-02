@@ -20,22 +20,22 @@ server:
 
 data:
     # The training and testing dataset
-    datasource: FashionMNIST
+    datasource: MNIST
 
     # Where the dataset is located
     data_path: ./data
 
     # Number of samples in each partition
-    partition_size: 200
+    partition_size: 600
 
     # Whether use varied partition per client or not?
-    varied: true
+    varied: false
 
     # IID or non-IID?
     sampler: noniid
 
     # The concentration parameter for the Dirichlet distribution
-    concentration: 0.5
+    # concentration: 0.5
 
     # The random seed for sampling data
     random_seed: 1
@@ -57,9 +57,9 @@ trainer:
     epochs: 10
 
     # Whether use varied epochs per client or not?
-    varied: true
+    varied: false
 
-    batch_size: 32
+    batch_size: 10
     optimizer: SGD
     learning_rate: 0.01
     momentum: 0.9
@@ -117,4 +117,5 @@ results:
     # Plot results (x_axis&y_axis)
     plot: round&accuracy, round&training_time, round_time&accuracy, round_time&training_time
 
+    
 

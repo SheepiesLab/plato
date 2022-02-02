@@ -6,6 +6,7 @@ import logging
 import time
 from dataclasses import dataclass
 
+import numpy as np
 from plato.algorithms import registry as algorithms_registry
 from plato.clients import base
 from plato.config import Config
@@ -42,6 +43,9 @@ class Client(base.Client):
         self.data_loading_time = None
         self.data_loading_time_sent = False
 
+        self.varied_partition = 1
+        self.varied_epochs = 1
+
     def __repr__(self):
         return 'Client #{}.'.format(self.client_id)
 
@@ -62,6 +66,21 @@ class Client(base.Client):
         self.outbound_processor, self.inbound_processor = processor_registry.get(
             "Client", client_id=self.client_id, trainer=self.trainer)
 
+    def process_server_response(self, server_response):
+        """Additional client-specific processing on the server response."""
+        # Reset workload capacity at the initial step (for the new episode)
+        if server_response['current_round'] == 1:
+            # Clients claim different number of data samples in each new episode
+            if hasattr(Config().data, 'varied') and Config().data.varied:
+                # self.varied_partition = np.random.choice([0.5, 0.8, 1.0, 1.25, 2.0])
+                self.varied_partition = np.random.choice([0.1, 0.4, 0.7, 1.0])
+
+            # Clients claim different number of training epochs in each new episode
+            if hasattr(Config().trainer, 'varied') and Config().trainer.varied:
+                # self.varied_epochs = np.random.choice([0.5, 0.8, 1.0, 1.25, 2.0])
+                # self.varied_epochs = np.random.choice([0.1, 0.3, 0.5, 0.7, 1.0])
+                self.varied_epochs = np.random.choice([0.1, 0.4, 0.7, 1.0])
+
     def load_data(self) -> None:
         """Generating data and loading them onto this client."""
         data_loading_start_time = time.perf_counter()
@@ -77,7 +96,7 @@ class Client(base.Client):
                      self.datasource.num_train_examples())
 
         # Setting up the data sampler
-        self.sampler = samplers_registry.get(self.datasource, self.client_id)
+        self.sampler = samplers_registry.get(self.datasource, self.client_id, self.varied_partition)
 
         if hasattr(Config().trainer, 'use_mindspore'):
             # MindSpore requires samplers to be used while constructing
@@ -108,7 +127,7 @@ class Client(base.Client):
 
         # Perform model training
         try:
-            training_time = self.trainer.train(self.trainset, self.sampler)
+            training_time = self.trainer.train(self.trainset, self.sampler, self.varied_epochs)
         except ValueError:
             await self.sio.disconnect()
 

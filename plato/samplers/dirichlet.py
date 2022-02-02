@@ -13,13 +13,13 @@ from plato.samplers import base
 class Sampler(base.Sampler):
     """Create a data sampler for each client to use a divided partition of the
     dataset, biased across labels according to the Dirichlet distribution."""
-    def __init__(self, datasource, client_id, testing):
+    def __init__(self, datasource, client_id, varied_partition, testing):
         super().__init__()
 
         # Different clients should have a different bias across the labels
         np.random.seed(self.random_seed * int(client_id))
 
-        self.partition_size = Config().data.partition_size
+        self.partition_size = max(1, int(Config().data.partition_size * varied_partition))
 
         # Concentration parameter to be used in the Dirichlet distribution
         concentration = Config().data.concentration if hasattr(

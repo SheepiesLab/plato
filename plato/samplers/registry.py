@@ -49,7 +49,7 @@ else:
     ])
 
 
-def get(datasource, client_id, testing=False):
+def get(datasource, client_id, varied_partition, testing=False):
     """Get an instance of the sampler."""
     if testing:
         if hasattr(Config().data, 'test_set_sampler'):
@@ -72,6 +72,7 @@ def get(datasource, client_id, testing=False):
     if sampler_type in registered_samplers:
         registered_sampler = registered_samplers[sampler_type](datasource,
                                                                client_id,
+                                                               varied_partition,
                                                                testing=testing)
     else:
         raise ValueError('No such sampler: {}'.format(sampler_type))

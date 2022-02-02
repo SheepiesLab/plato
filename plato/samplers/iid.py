@@ -12,7 +12,7 @@ from plato.samplers import base
 class Sampler(base.Sampler):
     """Create a data sampler for each client to use a randomly divided partition of the
     dataset."""
-    def __init__(self, datasource, client_id, testing):
+    def __init__(self, datasource, client_id, varied_partition, testing):
         super().__init__()
         if testing:
             dataset = datasource.get_test_set()
@@ -24,7 +24,7 @@ class Sampler(base.Sampler):
         np.random.seed(self.random_seed)
         np.random.shuffle(indices)
 
-        partition_size = Config().data.partition_size
+        partition_size = max(1, int(Config().data.partition_size * varied_partition))
         total_clients = Config().clients.total_clients
         total_size = partition_size * total_clients
 

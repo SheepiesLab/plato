@@ -233,7 +233,7 @@ class Trainer(base.Trainer):
             filename = f"{model_type}_{self.client_id}_{config['run_id']}.pth"
             self.save_model(filename)
 
-    def train(self, trainset, sampler, cut_layer=None) -> float:
+    def train(self, trainset, sampler, varied_epochs, cut_layer=None) -> float:
         """The main training loop in a federated learning workload.
 
         Arguments:
@@ -245,6 +245,7 @@ class Trainer(base.Trainer):
         float: Elapsed time during training.
         """
         config = Config().trainer._asdict()
+        config['epochs'] = max(1, int(config['epochs'] * varied_epochs))
         config['run_id'] = Config().params['run_id']
 
         if 'max_concurrency' in config:

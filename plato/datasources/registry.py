@@ -50,6 +50,7 @@ else:
         tiny_imagenet,
         femnist,
         feature,
+        qoenflx,
     )
 
     registered_datasources = OrderedDict([('MNIST', mnist),
@@ -59,7 +60,8 @@ else:
                                           ('HuggingFace', huggingface),
                                           ('PASCAL_VOC', pascal_voc),
                                           ('TinyImageNet', tiny_imagenet),
-                                          ('Feature', feature)])
+                                          ('Feature', feature),
+                                          ('QoENFLX', qoenflx)])
 
     registered_partitioned_datasources = OrderedDict([('FEMNIST', femnist)])
 

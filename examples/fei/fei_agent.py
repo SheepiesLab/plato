@@ -79,19 +79,28 @@ class RLAgent(simple_rl_agent.RLAgent):
                      self.current_episode)
 
         # Reboot/reconfigure the FL server
-        await self.sio.emit('env_reset', {'current_episode': self.current_episode})
+        await self.sio.emit('env_reset',
+                            {'current_episode': self.current_episode})
 
     async def prep_action(self):
         """ Get action from RL policy. """
-        if Config().algorithm.start_steps > self.total_steps:
-            self.action = np.array(
-                self.action_space.sample())  # Sample random action
+        if Config().algorithm.mode == 'train':
+            if Config().algorithm.start_steps > self.total_steps:
+                self.action = np.array(
+                    self.action_space.sample())  # Sample random action
+                if Config().algorithm.recurrent_actor:
+                    self.action = np.reshape(self.action, (-1, 1))
+            else:  # Sample action from policy
+                if Config().algorithm.recurrent_actor:
+                    self.action, (self.nh,
+                                  self.nc) = self.policy.select_action(
+                                      self.state, (self.h, self.c))
+                    self.action = np.reshape(np.array(self.action), (-1, 1))
+                else:
+                    self.action = self.policy.select_action(self.state)
+        else:
             if Config().algorithm.recurrent_actor:
-                self.action = np.reshape(self.action, (-1, 1))
-        else:  # Sample action from policy
-            if Config().algorithm.recurrent_actor:
-                self.action, (self.nh, self.nc) = self.policy.select_action(
-                    self.state, (self.h, self.c))
+                self.action, __ = self.policy.select_action(self.state)
                 self.action = np.reshape(np.array(self.action), (-1, 1))
             else:
                 self.action = self.policy.select_action(self.state)
@@ -114,7 +123,8 @@ class RLAgent(simple_rl_agent.RLAgent):
         # reward for average accuracy in the last a few time steps
         if self.is_done:
             avg_accuracy = mean(self.pre_acc)
-            reward += math.log(avg_accuracy / (1 - avg_accuracy)) * Config().algorithm.beta
+            reward += math.log(avg_accuracy /
+                               (1 - avg_accuracy)) * Config().algorithm.beta
         return reward
 
     def get_done(self):
