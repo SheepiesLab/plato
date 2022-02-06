@@ -405,10 +405,6 @@ class Server:
                 else:
                     sid = self.clients[self.selected_client_id]['sid']
 
-                server_response = {'id': self.selected_client_id}
-                server_response = await self.customize_server_response(
-                    server_response)
-
                 self.training_clients[self.selected_client_id] = {
                     'id': self.selected_client_id,
                     'starting_round': self.current_round,
@@ -419,7 +415,10 @@ class Server:
                 logging.info("[Server #%d] Selecting client #%d for training.",
                              os.getpid(), self.selected_client_id)
 
-                server_response = {'id': self.selected_client_id}
+                server_response = {
+                    'id': self.selected_client_id,
+                    'current_round': self.current_round
+                }
                 server_response = await self.customize_server_response(
                     server_response)
 
