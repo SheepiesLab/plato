@@ -25,7 +25,7 @@ else:
     from plato.trainers import (
         basic,
         pascal_voc,
-        qoenflx,
+        qoenflx
     )
     registered_trainers = OrderedDict([
         ('basic', basic.Trainer),

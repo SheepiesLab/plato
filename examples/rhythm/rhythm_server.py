@@ -77,10 +77,10 @@ class Server(fedavg_cs.Server):
 
             # Initialize the csv file which will record results of RL agent
             if hasattr(Config(), 'results'):
-                result_csv_file = Config().result_dir + 'result_rl.csv'
+                result_csv_file = Config().results_dir + 'result_rl.csv'
                 csv_processor.initialize_csv(result_csv_file,
                                              self.rl_recorded_items,
-                                             Config().result_dir)
+                                             Config().results_dir)
 
         else:
             super().configure()
@@ -119,9 +119,6 @@ class Server(fedavg_cs.Server):
 
         # Configure the FL central server
         super().configure()
-
-        # starting time of a gloabl training round
-        self.round_start_time = 0
 
     async def wrap_up(self):
         """Wrapping up when one RL time step (one FL round) is done."""
@@ -192,13 +189,15 @@ class Server(fedavg_cs.Server):
             new_row = []
             for item in self.rl_recorded_items:
                 item_value = {
-                    'episode': self.rl_episode,
-                    'cumulative_reward': self.cumulative_reward,
+                    'episode':
+                    self.rl_episode,
+                    'cumulative_reward':
+                    self.cumulative_reward,
                     'rl_training_time':
                     time.perf_counter() - self.rl_episode_start_time
                 }[item]
                 new_row.append(item_value)
-            result_csv_file = Config().result_dir + 'result_rl.csv'
+            result_csv_file = Config().results_dir + 'result_rl.csv'
             csv_processor.write_csv(result_csv_file, new_row)
 
         self.wrapped_previous_episode.set()

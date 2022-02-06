@@ -11,12 +11,13 @@ https://proceedings.neurips.cc/paper/2020/hash/564127c03caab942e503ee6f810f54fd-
 """
 
 import logging
-import random
+import numpy as np
 from dataclasses import dataclass
 
 from plato.config import Config
 from plato.clients import simple
 from plato.clients import base
+
 
 @dataclass
 class Report(base.Report):
@@ -27,7 +28,12 @@ class Report(base.Report):
 class Client(simple.Client):
     """A fednova federated learning client who sends weight updates
     and the number of local epochs."""
-    def __init__(self, model=None, datasource=None, algorithm=None, trainer=None):
+
+    def __init__(self,
+                 model=None,
+                 datasource=None,
+                 algorithm=None,
+                 trainer=None):
         super().__init__(model, datasource, algorithm, trainer)
         self.pattern = None
         self.max_local_iter = None
@@ -43,8 +49,9 @@ class Client(simple.Client):
         if Config().algorithm.pattern == "constant":
             local_epochs = Config().algorithm.max_local_epochs
         else:
-            local_epochs = random.randint(2,
-                                          Config().algorithm.max_local_epochs)
+            local_epochs = np.random.randint(
+                2,
+                Config().algorithm.max_local_epochs + 1)
 
         logging.info("[Client #%d] Training with %d epoches.", self.client_id,
                      local_epochs)
@@ -54,4 +61,5 @@ class Client(simple.Client):
 
         report, weights = await super().train()
 
-        return Report(report.num_samples, report.accuracy, local_epochs), weights
+        return Report(report.num_samples, report.accuracy,
+                      report.training_time, local_epochs), weights

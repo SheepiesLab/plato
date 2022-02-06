@@ -38,7 +38,6 @@ def get_optimizer(model) -> optim.Optimizer:
                                 eps=Config().trainer.eps,
                                 weight_decay=Config().trainer.weight_decay)
 
-
     raise ValueError('No such optimizer: {}'.format(
         Config().trainer.optimizer))
 

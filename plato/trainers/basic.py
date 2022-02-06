@@ -5,15 +5,14 @@ import asyncio
 import logging
 import multiprocessing as mp
 import os
+import re
 import time
 
 import numpy as np
 import torch
-import torch.nn as nn
 from opacus import GradSampleModule
 from opacus.privacy_engine import PrivacyEngine
 from opacus.validators import ModuleValidator
-
 from plato.config import Config
 from plato.models import registry as models_registry
 from plato.trainers import base
@@ -22,6 +21,7 @@ from plato.utils import optimizers
 
 class Trainer(base.Trainer):
     """A basic federated learning trainer, used by both the client and the server."""
+
     def __init__(self, model=None):
         """Initializing the trainer with the provided model.
 
@@ -31,6 +31,9 @@ class Trainer(base.Trainer):
         """
         super().__init__()
 
+        self.training_start_time = time.time()
+        self.models_per_epoch = {}
+
         if model is None:
             model = models_registry.get()
 
@@ -38,7 +41,7 @@ class Trainer(base.Trainer):
         if Config().is_parallel():
             logging.info("Using Data Parallelism.")
             # DataParallel will divide and allocate batch_size to all available GPUs
-            self.model = nn.DataParallel(model)
+            self.model = torch.nn.DataParallel(model)
         else:
             self.model = model
 
@@ -60,18 +63,19 @@ class Trainer(base.Trainer):
         assert self.client_id == 0
         return torch.zeros(shape)
 
-    def save_model(self, filename=None):
+    def save_model(self, filename=None, location=None):
         """Saving the model to a file."""
+        model_dir = Config(
+        ).params['model_dir'] if location is None else location
         model_name = Config().trainer.model_name
-        model_dir = Config().params['model_dir']
 
         if not os.path.exists(model_dir):
             os.makedirs(model_dir)
 
         if filename is not None:
-            model_path = f'{model_dir}{filename}'
+            model_path = f'{model_dir}/{filename}'
         else:
-            model_path = f'{model_dir}{model_name}.pth'
+            model_path = f'{model_dir}/{model_name}.pth'
 
         torch.save(self.model.state_dict(), model_path)
 
@@ -82,15 +86,16 @@ class Trainer(base.Trainer):
             logging.info("[Client #%d] Model saved to %s.", self.client_id,
                          model_path)
 
-    def load_model(self, filename=None):
+    def load_model(self, filename=None, location=None):
         """Loading pre-trained model weights from a file."""
-        model_dir = Config().params['pretrained_model_dir']
+        model_dir = Config(
+        ).params['model_dir'] if location is None else location
         model_name = Config().trainer.model_name
 
         if filename is not None:
-            model_path = f'{model_dir}{filename}'
+            model_path = f'{model_dir}/{filename}'
         else:
-            model_path = f'{model_dir}{model_name}.pth'
+            model_path = f'{model_dir}/{model_name}.pth'
 
         if self.client_id == 0:
             logging.info("[Server #%d] Loading a model from %s.", os.getpid(),
@@ -100,6 +105,16 @@ class Trainer(base.Trainer):
                          self.client_id, model_path)
 
         self.model.load_state_dict(torch.load(model_path))
+
+    def simulate_sleep_time(self):
+        """Simulate client's speed by putting it to sleep."""
+        sleep_seconds = Config().client_sleep_times[self.client_id - 1]
+
+        # Put this client to sleep
+        logging.info("[Client #%d] Going to sleep for %.2f seconds.",
+                     self.client_id, sleep_seconds)
+        time.sleep(sleep_seconds)
+        logging.info("[Client #%d] Woke up.", self.client_id)
 
     def train_process(self, config, trainset, sampler, cut_layer=None):
         """The main training loop in a federated learning workload, run in
@@ -113,6 +128,8 @@ class Trainer(base.Trainer):
         sampler: the sampler that extracts a partition for this client.
         cut_layer (optional): The layer which training should start from.
         """
+        tic = time.perf_counter()
+
         try:
             custom_train = getattr(self, "train_model", None)
 
@@ -149,7 +166,7 @@ class Trainer(base.Trainer):
                 if callable(_loss_criterion):
                     loss_criterion = self.loss_criterion(self.model)
                 else:
-                    loss_criterion = nn.CrossEntropyLoss()
+                    loss_criterion = torch.nn.CrossEntropyLoss()
 
                 # Initializing the optimizer
                 get_optimizer = getattr(self, "get_optimizer",
@@ -223,6 +240,23 @@ class Trainer(base.Trainer):
                     if hasattr(optimizer, "params_state_update"):
                         optimizer.params_state_update()
 
+                    # Simulate client's speed
+                    if self.client_id != 0 and hasattr(
+                            Config().clients, "speed_simulation") and Config(
+                            ).clients.speed_simulation:
+                        self.simulate_sleep_time()
+
+                    # Saving the model at the end of this epoch to a file so that
+                    # it can later be retrieved to respond to server requests
+                    # in asynchronous mode when the wall clock time is simulated
+                    if hasattr(Config().server, 'request_update') and Config(
+                    ).server.request_update:
+                        self.model.cpu()
+                        training_time = time.perf_counter() - tic
+                        filename = f"{self.client_id}_{epoch}_{training_time}.pth"
+                        self.save_model(filename)
+                        self.model.to(self.device)
+
         except Exception as training_exception:
             logging.info("Training on client #%d failed.", self.client_id)
             raise training_exception
@@ -247,6 +281,9 @@ class Trainer(base.Trainer):
         config = Config().trainer._asdict()
         config['epochs'] = max(1, int(config['epochs'] * varied_epochs))
         config['run_id'] = Config().params['run_id']
+
+        # Set the start time of training in absolute time
+        self.training_start_time = time.time()
 
         if 'max_concurrency' in config:
             self.start_training()
@@ -292,6 +329,7 @@ class Trainer(base.Trainer):
         Arguments:
         config: a dictionary of configuration parameters.
         testset: The test dataset.
+        sampler: The sampler that extracts a partition of the test dataset.
         """
         self.model.to(self.device)
         self.model.eval()
@@ -352,6 +390,7 @@ class Trainer(base.Trainer):
 
         Arguments:
         testset: The test dataset.
+        sampler: The sampler that extracts a partition of the test dataset.
         """
         config = Config().trainer._asdict()
         config['run_id'] = Config().params['run_id']
@@ -386,11 +425,12 @@ class Trainer(base.Trainer):
 
         return accuracy
 
-    async def server_test(self, testset):
+    async def server_test(self, testset, sampler=None):
         """Testing the model on the server using the provided test dataset.
 
         Arguments:
         testset: The test dataset.
+        sampler: The sampler that extracts a partition of the test dataset.
         """
         config = Config().trainer._asdict()
         config['run_id'] = Config().params['run_id']
@@ -403,8 +443,16 @@ class Trainer(base.Trainer):
         if callable(custom_test):
             return self.test_model(config, testset)
 
-        test_loader = torch.utils.data.DataLoader(
-            testset, batch_size=config['batch_size'], shuffle=False)
+        if sampler is None:
+            test_loader = torch.utils.data.DataLoader(
+                testset, batch_size=config['batch_size'], shuffle=False)
+        # Use a testing set following the same distribution as the training set
+        else:
+            test_loader = torch.utils.data.DataLoader(
+                testset,
+                batch_size=config['batch_size'],
+                shuffle=False,
+                sampler=sampler.get())
 
         correct = 0
         total = 0
@@ -424,3 +472,38 @@ class Trainer(base.Trainer):
                 await asyncio.sleep(0)
 
         return correct / total
+
+    def obtain_model_update(self, wall_time):
+        """
+            Obtain a saved model for a particular epoch that finishes just after the provided
+            wall clock time is reached.
+        """
+        # Constructing a list of epochs and training times
+        self.models_per_epoch = {}
+
+        for filename in os.listdir(Config().params['model_dir']):
+            split = re.match(
+                r"(?P<client_id>\d+)_(?P<epoch>\d+)_(?P<training_time>\d+.\d+).pth",
+                filename)
+
+            if split is not None:
+                epoch = split.group('epoch')
+                training_time = split.group('training_time')
+                if self.client_id == int(split.group('client_id')):
+                    self.models_per_epoch[epoch] = {
+                        'training_time': float(training_time),
+                        'model_checkpoint': filename
+                    }
+        # Locate the model at a specific wall clock time
+        for epoch in sorted(self.models_per_epoch):
+            training_time = self.models_per_epoch[epoch]['training_time']
+            model_checkpoint = self.models_per_epoch[epoch]['model_checkpoint']
+            if training_time + self.training_start_time > wall_time:
+                self.load_model(model_checkpoint)
+                logging.info(
+                    "[Client #%s] Responding to the server with the model after "
+                    "epoch %s finished, at time %s.", self.client_id, epoch,
+                    training_time + self.training_start_time)
+                return self.model
+
+        return self.model

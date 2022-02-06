@@ -79,13 +79,13 @@ algorithm:
     max_action: 1
     min_action: -1
     max_episode: 2000
-    steps_per_episode: 20
+    alpha: 5 # controls the decreasing rate of the mapping function
     beta: 10  # coefficient used in reward function
     theta: 0.005  # threshold for stdev(pre_acc)
     log_interval: 10
     mode: test  # test
     pretrained: true
-    pretrained_iter: 150
+    pretrained_iter: 300
     test_step: 50
 
     # RL policy
@@ -113,7 +113,8 @@ algorithm:
 
 results:
     # Write the following parameter(s) into a CSV
-    types: accuracy, training_time, round_time
+    types: accuracy, elapsed_time, round_time
 
-    # Plot results (x_axis&y_axis)
-    plot: round&accuracy, round&training_time, round_time&accuracy, round_time&training_time
+    # Plot results (x_axis-y_axis)
+    plot: round-accuracy, round-elapsed_time
+

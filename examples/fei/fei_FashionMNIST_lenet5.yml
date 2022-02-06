@@ -16,7 +16,7 @@ clients:
 
 server:
     address: 127.0.0.1
-    port: 8080
+    port: 8000
 
 data:
     # The training and testing dataset
@@ -29,7 +29,7 @@ data:
     partition_size: 200
 
     # Whether use varied partition per client or not?
-    varied: true
+    varied: false
 
     # IID or non-IID?
     sampler: noniid
@@ -57,7 +57,7 @@ trainer:
     epochs: 10
 
     # Whether use varied epochs per client or not?
-    varied: true
+    varied: false
 
     batch_size: 32
     optimizer: SGD
@@ -78,22 +78,20 @@ algorithm:
     max_action: 1
     min_action: -1
     max_episode: 2000
-    steps_per_episode: 20
+    alpha: 5 # controls the decreasing rate of the mapping function
     beta: 10  # coefficient used in reward function
     theta: 0.005  # threshold for stdev(pre_acc)
     log_interval: 10
-    mode: test  # test
-    pretrained: true
-    pretrained_iter: 300
-    test_step: 50
-
+    mode: train  # test
+    pretrained: false
+    pretrained_iter: 0
+    test_step: 20
     # RL policy
     model_name: td3
     # reward discounted factor
     gamma: 0.99
     tau: 0.005
     learning_rate: 0.0003
-    seed: 1234
      # Noise added to target policy during critic update
     policy_noise: 0.25
     # Range to clip target policy noise
@@ -105,16 +103,17 @@ algorithm:
     hidden_size: 256
     # steps sampling random actions
     start_steps: 32
-    # replay buffer size
+    # replay memory
     replay_size: 10000
+    replay_seed: 1234
     # whether use LSTM or FC nets
     recurrent_actor: true
 
 results:
     # Write the following parameter(s) into a CSV
-    types: accuracy, training_time, round_time
+    types: accuracy, elapsed_time, round_time
 
-    # Plot results (x_axis&y_axis)
-    plot: round&accuracy, round&training_time, round_time&accuracy, round_time&training_time
+    # Plot results (x_axis-y_axis)
+    plot: round-accuracy, round-elapsed_time
 
 

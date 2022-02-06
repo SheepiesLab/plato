@@ -1,24 +1,19 @@
 """
 A basic RL environment for FL server using Gym for RL control.
 """
+import asyncio
 import logging
-import random
 from abc import abstractmethod
 
-import gym
 import numpy as np
 from gym import spaces
-
 from plato.config import Config
 from plato.utils import csv_processor
-from plato.utils.reinforcement_learning import base_rl_agent
 
 
-class RLAgent(base_rl_agent.RLAgent, gym.Env):
+class RLAgent(object):
     """ A basic RL environment for FL server using Gym for RL control. """
     def __init__(self):
-        super().__init__()
-        self.agent = 'simple'
         self.n_actions = Config().clients.per_round
         self.n_states = Config().clients.per_round * Config(
         ).algorithm.n_features
@@ -39,6 +34,7 @@ class RLAgent(base_rl_agent.RLAgent, gym.Env):
 
         self.state = None
         self.next_state = None
+        self.new_state = None
         self.action = None
         self.next_action = None
         self.reward = None
@@ -47,15 +43,20 @@ class RLAgent(base_rl_agent.RLAgent, gym.Env):
         self.total_steps = 0
         self.current_episode = 0
         self.is_done = False
+        self.reset_env = False
+        self.finished = False
 
-    def step(self, action):
+        # RL server waits for the event that the next action is updated
+        self.action_updated = asyncio.Event()
+
+    def step(self):
         """ Update the followings using server update. """
-        self.next_state = self.get_state()
-        self.is_done = self.get_done()
-        self.reward = self.get_reward()
+        new_state = self.get_state()
+        is_done = self.get_done()
+        reward = self.get_reward()
         info = self.get_info()
 
-        return self.next_state, self.reward, self.is_done, info
+        return new_state, reward, is_done, info
 
     async def reset(self):
         """ Reset RL environment. """
@@ -67,27 +68,18 @@ class RLAgent(base_rl_agent.RLAgent, gym.Env):
         self.is_done = False
         self.episode_reward = 0
         self.current_episode += 1
-
+        self.reset_env = True
         logging.info("[RL Agent] Starting RL episode #%d.",
                      self.current_episode)
 
-        # Reboot/reconfigure the FL server
-        await self.sio.emit('env_reset', {'current_episode': self.current_episode})
-
-        return
-
-    async def prep_action(self):
+    def prep_action(self):
         """ Get action from RL policy. """
         logging.info("[RL Agent] Selecting action...")
         self.action = self.policy.select_action(self.state)
-        return self.action
 
     def get_state(self):
         """ Get state for agent. """
-        if self.server_update:
-            return self.server_update
-        # Initial state is random when env resets
-        return [round(random.random(), 4) for i in range(self.n_states)]
+        return self.new_state
 
     def get_reward(self):
         """ Get reward for agent. """
@@ -105,39 +97,18 @@ class RLAgent(base_rl_agent.RLAgent, gym.Env):
         """ Get info used for benchmarking. """
         return {}
 
-    def render(self, mode="human"):
-        """ Render the Gym env. """
-
-    def close(self):
-        """ Closing the RL Agent. """
-        logging.info("[RL Agent] RL control concluded.")
-
-    async def wrap_up(self):
-        """ Wrap up when RL control is concluded. """
-        # Close FL environment
-        await self.sio.emit('agent_dead', {'agent': self.agent})
-
-    # Implement methods for communication between RL agent and env
-    def process_env_response(self, response):
-        """ Additional RL-specific processing upon the server response. """
-        if 'current_round' in response:
-            assert self.current_step == response['current_round']
-        if 'current_rl_episode' in response:
-            assert self.current_episode == response['current_rl_episode']
-
     def process_env_update(self):
         """ Process state update to RL Agent. """
         if self.current_step == 0:
             self.state = self.get_state()
         else:
-            self.step(self.action)
+            self.next_state, self.reward, self.is_done, __ = self.step()
             if Config().algorithm.mode == 'train':
                 self.process_experience()
             self.state = self.next_state
             self.episode_reward += self.reward
 
-            step_result_csv_file = Config(
-            ).algorithm.result_dir + 'step_result.csv'
+            step_result_csv_file = Config().results_dir + 'step_result.csv'
             csv_processor.write_csv(step_result_csv_file,
                                     [self.current_episode, self.current_step] +
                                     list(self.state) + list(self.action))
@@ -149,37 +120,18 @@ class RLAgent(base_rl_agent.RLAgent, gym.Env):
 
             # Break the loop when RL training is concluded
             if self.current_episode >= Config().algorithm.max_episode:
-                await self.wrap_up()
+                self.finished = True
             else:
                 await self.reset()
         elif self.current_step >= Config().algorithm.test_step:
             # Break the loop when RL testing is concluded
-            await self.wrap_up()
+            self.finished = True
         else:
             self.current_step += 1
             self.total_steps += 1
             logging.info("[RL Agent] Preparing action...")
-            agent_response = {'current_step': self.current_step}
-            agent_response['current_episode'] = self.current_episode
-            agent_response = await self.customize_agent_response(agent_response
-                                                                 )
-
-            # Sending the response as metadata to the server (update to follow)
-            await self.sio.emit('update_to_arrive',
-                                {'agent_response': agent_response})
-
-            # Sending the agent update to server
-            action = await self.prep_action()
-
-            logging.info(
-                "[RL Agent] Sending the current action at episode %d timestep %d to server.",
-                self.current_episode, self.current_step)
-
-            await self.send_update(action)
-
-    async def customize_agent_response(self, response):
-        """ Wrap up generating the agent response with any additional information. """
-        return response
+            self.prep_action()
+            self.action_updated.set()
 
     @abstractmethod
     def update_policy(self):
