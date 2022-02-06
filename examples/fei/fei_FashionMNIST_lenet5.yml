@@ -6,7 +6,7 @@ clients:
     per_round: 10
 
     # Whether select variable number of clients per round
-    varied: false
+    varied: true
 
     # Should the clients compute test accuracy locally?
     do_test: false
@@ -29,7 +29,7 @@ data:
     partition_size: 200
 
     # Whether use varied partition per client or not?
-    varied: false
+    varied: true
 
     # IID or non-IID?
     sampler: noniid
@@ -57,7 +57,7 @@ trainer:
     epochs: 10
 
     # Whether use varied epochs per client or not?
-    varied: false
+    varied: true
 
     batch_size: 32
     optimizer: SGD
@@ -78,7 +78,7 @@ algorithm:
     max_action: 1
     min_action: -1
     max_episode: 2000
-    alpha: 5 # controls the decreasing rate of the mapping function
+    alpha: 5  # controls the decreasing rate of the mapping function
     beta: 10  # coefficient used in reward function
     theta: 0.005  # threshold for stdev(pre_acc)
     log_interval: 10
@@ -102,7 +102,7 @@ algorithm:
     batch_size: 64
     hidden_size: 256
     # steps sampling random actions
-    start_steps: 32
+    start_steps: 320
     # replay memory
     replay_size: 10000
     replay_seed: 1234
