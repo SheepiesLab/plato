@@ -113,8 +113,7 @@ class RLAgent(object):
             step_result_csv_file = f'{results_dir}/{os.getpid()}_step_result.csv'
             csv_processor.write_csv(step_result_csv_file,
                                     [self.current_episode, self.current_step] +
-                                    list(self.state) + list(self.action),
-                                    results_dir=Config().results_dir)
+                                    list(self.state) + list(self.action))
 
     async def prep_agent_update(self):
         """ Update RL Agent. """
