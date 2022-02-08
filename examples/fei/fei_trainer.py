@@ -115,9 +115,9 @@ class Trainer(basic.Trainer):
             os.makedirs(model_dir)
 
         if filename is not None:
-            loss_path = f"{model_dir}{filename}"
+            loss_path = f'{model_dir}/{filename}'
         else:
-            loss_path = f'{model_dir}{model_name}.loss'
+            loss_path = f'{model_dir}/{model_name}.loss'
 
         with open(loss_path, 'w') as file:
             file.write(str(loss))
@@ -129,9 +129,9 @@ class Trainer(basic.Trainer):
         model_name = Config().trainer.model_name
 
         if filename is not None:
-            loss_path = f"{model_dir}{filename}"
+            loss_path = f'{model_dir}/{filename}'
         else:
-            loss_path = f'{model_dir}{model_name}.loss'
+            loss_path = f'{model_dir}/{model_name}.loss'
 
         with open(loss_path, 'r') as file:
             loss = float(file.read())
