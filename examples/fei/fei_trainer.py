@@ -102,7 +102,7 @@ class Trainer(basic.Trainer):
 
         # Save the training loss of the last epoch in this round
         model_name = config['model_name']
-        filename = f"{model_name}_{self.client_id}_{config['run_id']}.loss"
+        filename = f'{model_name}_{self.client_id}.loss'
         Trainer.save_loss(loss.data.item(), filename)
 
     @staticmethod
