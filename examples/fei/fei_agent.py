@@ -14,13 +14,19 @@ from plato.utils.reinforcement_learning import simple_rl_agent
 from plato.utils.reinforcement_learning.policies import \
     registry as policies_registry
 
+os.environ['config_file'] = 'examples/fei/fei_FashionMNIST_lenet5.yml'
 
 class RLAgent(simple_rl_agent.RLAgent):
     """ An RL agent for FL training using FEI. """
+
     def __init__(self):
         super().__init__()
-        self.policy = policies_registry.get(Config().algorithm.n_features,
-                                            self.action_space)
+        # TODO: check state_dim
+        if hasattr(Config().clients, 'varied') and Config().clients.varied:
+            self.policy = policies_registry.get(Config().algorithm.n_features,
+                                                self.n_actions)
+        else:
+            self.policy = policies_registry.get(self.n_states, self.n_actions)
 
         if Config().algorithm.recurrent_actor:
             self.h, self.c = self.policy.get_initial_states()
@@ -34,19 +40,18 @@ class RLAgent(simple_rl_agent.RLAgent):
         self.recorded_rl_items = ['episode', 'actor_loss', 'critic_loss']
 
         if self.current_episode == 0:
-            results_dir = Config().results_dir
-            episode_result_csv_file = f'{results_dir}/{os.getpid()}_episode_result.csv'
+            result_dir = Config().result_dir
+            episode_result_csv_file = f'{result_dir}/{os.getpid()}_episode_result.csv'
             csv_processor.initialize_csv(episode_result_csv_file,
-                                         self.recorded_rl_items, results_dir)
-            episode_reward_csv_file = f'{results_dir}/{os.getpid()}_episode_reward.csv'
+                                         self.recorded_rl_items, result_dir)
+            episode_reward_csv_file = f'{result_dir}/{os.getpid()}_episode_reward.csv'
             csv_processor.initialize_csv(
                 episode_reward_csv_file,
-                ['Episode #', 'Steps', 'Final accuracy', 'Reward'],
-                results_dir)
-            step_result_csv_file = f'{results_dir}/{os.getpid()}_step_result.csv'
+                ['Episode #', 'Steps', 'Final accuracy', 'Reward'], result_dir)
+            step_result_csv_file = f'{result_dir}/{os.getpid()}_step_result.csv'
             csv_processor.initialize_csv(
                 step_result_csv_file,
-                ['Episode #', 'Step #', 'state', 'action'], results_dir)
+                ['Episode #', 'Step #', 'state', 'action'], result_dir)
 
         # Record test accuracy of the latest 5 rounds/steps
         self.pre_acc = deque(5 * [0], maxlen=5)
@@ -59,6 +64,13 @@ class RLAgent(simple_rl_agent.RLAgent):
 
         if Config().algorithm.recurrent_actor:
             self.h, self.c = self.policy.get_initial_states()
+    
+    def get_state(self):
+        """ Get state for agent. """
+        if hasattr(Config().clients, 'varied') and Config().clients.varied:
+            return self.new_state
+        else:
+            return np.squeeze(self.new_state.reshape(1, -1))
 
     def prep_action(self):
         """ Get action from RL policy. """
@@ -67,23 +79,22 @@ class RLAgent(simple_rl_agent.RLAgent):
             if Config().algorithm.start_steps > self.total_steps:
                 self.action = np.array(
                     self.action_space.sample())  # Sample random action
-                if Config().algorithm.recurrent_actor:
-                    self.action = np.reshape(self.action, (-1, 1))
+                # self.action = np.reshape(self.action, (-1, 1))
             else:  # Sample action from policy
                 if Config().algorithm.recurrent_actor:
                     self.action, (self.nh,
                                   self.nc) = self.policy.select_action(
                                       self.state, (self.h, self.c))
-                    self.action = np.reshape(np.array(self.action), (-1, 1))
                 else:
                     self.action = self.policy.select_action(self.state)
+                # self.action = np.reshape(np.array(self.action), (-1, 1))
         else:
             if Config().algorithm.recurrent_actor:
                 # don't pass hidden states
                 self.action, __ = self.policy.select_action(self.state)
-                self.action = np.reshape(np.array(self.action), (-1, 1))
             else:
                 self.action = self.policy.select_action(self.state)
+            self.action = np.reshape(np.array(self.action), (-1, 1))
 
     def get_reward(self):
         """ Get reward for agent. """
@@ -127,11 +138,11 @@ class RLAgent(simple_rl_agent.RLAgent):
                     'critic_loss': critic_loss
                 }[item]
                 new_row.append(item_value)
-            results_dir = Config().results_dir
-            episode_result_csv_file = f'{results_dir}/{os.getpid()}_episode_result.csv'
+
+            episode_result_csv_file = f'{Config().result_dir}/{os.getpid()}_episode_result.csv'
             csv_processor.write_csv(episode_result_csv_file, new_row)
 
-        episode_reward_csv_file = Config().results_dir + 'episode_reward.csv'
+        episode_reward_csv_file = f'{Config().result_dir}/{os.getpid()}_episode_reward.csv'
         csv_processor.write_csv(episode_reward_csv_file, [
             self.current_episode, self.current_step,
             mean(self.pre_acc), self.episode_reward
@@ -146,12 +157,13 @@ class RLAgent(simple_rl_agent.RLAgent):
 
     def process_experience(self):
         """ Process step experience if needed in training mode. """
-        logging.info("[RL Agent] Saving the experience into replay buffer.")
+        logging.info(
+            "[RL Agent] Saving the experience into the replay buffer.")
         if Config().algorithm.recurrent_actor:
             self.policy.replay_buffer.push(
                 (self.state, self.action, self.reward, self.next_state,
                  np.float(self.is_done), self.h, self.c, self.nh, self.nc))
         else:
             self.policy.replay_buffer.push(
-                (self.state, self.action, self.reward, self.next_state,
-                 np.float(self.is_done)))
+                (self.state, self.action,
+                 self.reward, self.next_state, np.float(self.is_done)))

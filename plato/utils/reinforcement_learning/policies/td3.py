@@ -16,25 +16,27 @@ from torch.nn.utils.rnn import (pack_padded_sequence, pad_packed_sequence,
                                 pad_sequence)
 
 
-class ReplayMemory(base.ReplayMemory):
+class RNNReplayMemory:
     def __init__(self, state_dim, action_dim, hidden_size, capacity, seed):
-        super().__init__(state_dim, action_dim, capacity, seed)
         random.seed(seed)
         self.device = Config().device()
         self.capacity = int(capacity)
         self.ptr = 0
         self.size = 0
 
-        if Config().algorithm.recurrent_actor:
-            self.h = np.zeros((self.capacity, hidden_size))
-            self.nh = np.zeros((self.capacity, hidden_size))
-            self.c = np.zeros((self.capacity, hidden_size))
-            self.nc = np.zeros((self.capacity, hidden_size))
-            self.state = [0] * self.capacity
-            self.action = [0] * self.capacity
-            self.reward = [0] * self.capacity
-            self.next_state = [0] * self.capacity
-            self.done = [0] * self.capacity
+        self.h = np.zeros((self.capacity, hidden_size))
+        self.nh = np.zeros((self.capacity, hidden_size))
+        self.c = np.zeros((self.capacity, hidden_size))
+        self.nc = np.zeros((self.capacity, hidden_size))
+        if hasattr(Config().clients, 'varied') and Config().clients.varied:
+            self.state = np.zeros((self.capacity, action_dim, state_dim))
+            self.next_state = np.zeros((self.capacity, action_dim, state_dim))
+        else:
+            self.state = np.zeros((self.capacity, state_dim))
+            self.next_state = np.zeros((self.capacity, state_dim))
+        self.action = np.zeros((self.capacity, action_dim))
+        self.reward = np.zeros((self.capacity, 1))
+        self.done = np.zeros((self.capacity, 1))
 
     def push(self, data):
         self.state[self.ptr] = data[0]
@@ -43,11 +45,10 @@ class ReplayMemory(base.ReplayMemory):
         self.next_state[self.ptr] = data[3]
         self.done[self.ptr] = data[4]
 
-        if Config().algorithm.recurrent_actor:
-            self.h[self.ptr] = data[5].detach().cpu()
-            self.c[self.ptr] = data[6].detach().cpu()
-            self.nh[self.ptr] = data[7].detach().cpu()
-            self.nc[self.ptr] = data[8].detach().cpu()
+        self.h[self.ptr] = data[5].detach().cpu()
+        self.c[self.ptr] = data[6].detach().cpu()
+        self.nh[self.ptr] = data[7].detach().cpu()
+        self.nc[self.ptr] = data[8].detach().cpu()
 
         self.ptr = (self.ptr + 1) % self.capacity
         self.size = min(self.size + 1, self.capacity)
@@ -56,15 +57,6 @@ class ReplayMemory(base.ReplayMemory):
         ind = np.random.randint(0,
                                 self.size,
                                 size=int(Config().algorithm.batch_size))
-
-        if not Config().algorithm.recurrent_actor:
-            state = self.state[ind]
-            action = self.action[ind]
-            reward = self.reward[ind]
-            next_state = self.next_state[ind]
-            done = self.done[ind]
-
-            return state, action, reward, next_state, done
 
         h = torch.tensor(self.h[ind][None, ...],
                          requires_grad=True,
@@ -79,103 +71,84 @@ class ReplayMemory(base.ReplayMemory):
                           requires_grad=True,
                           dtype=torch.float).to(self.device)
 
-        state = [torch.FloatTensor(self.state[i]).to(self.device) for i in ind]
-        action = [
-            torch.FloatTensor(self.action[i]).to(self.device) for i in ind
-        ]
-        reward = [self.reward[i] for i in ind]
-        next_state = [
-            torch.FloatTensor(self.next_state[i]).to(self.device) for i in ind
-        ]
-        done = [self.done[i] for i in ind]
+        if hasattr(Config().clients, 'varied') and Config().clients.varied:
+            state = torch.FloatTensor(self.state[ind]).to(self.device)
+            next_state = torch.FloatTensor(self.next_state[ind]).to(
+                self.device)
+            action = torch.FloatTensor(self.action[ind]).to(
+                self.device)
+        else:
+            state = torch.FloatTensor(self.state[ind][:,
+                                                      None, :]).to(self.device)
+            next_state = torch.FloatTensor(
+                self.next_state[ind][:, None, :]).to(self.device)
+            action = torch.FloatTensor(self.action[ind][:, None, :]).to(
+                self.device)
+        reward = torch.FloatTensor(self.reward[ind][:,
+                                                    None, :]).to(self.device)
+        done = torch.FloatTensor(self.done[ind][:, None, :]).to(self.device)
 
         return state, action, reward, next_state, done, h, c, nh, nc
 
+    def __len__(self):
+        return self.size
 
-class Actor(nn.Module):
+
+class TD3Actor(base.Actor):
+    def __init__(self, state_dim, action_dim, max_action):
+        super().__init__(state_dim, action_dim, max_action)
+
+    def forward(self, x, hidden=None):
+        x = F.relu(self.l1(x))
+        x = F.relu(self.l2(x))
+        x = self.max_action * torch.tanh(self.l3(x))
+        return x
+
+
+class TD3Critic(nn.Module):
+    def __init__(self, state_dim, action_dim):
+        super(TD3Critic, self).__init__()
+
+        # Q1 architecture
+        self.l1 = nn.Linear(state_dim + action_dim, 400)
+        self.l2 = nn.Linear(400, 300)
+        self.l3 = nn.Linear(300, 1)
+
+        # Q2 architecture
+        self.l4 = nn.Linear(state_dim + action_dim, 400)
+        self.l5 = nn.Linear(400, 300)
+        self.l6 = nn.Linear(300, 1)
+
+    def forward(self, state, action, hidden1=None, hidden2=None):
+        sa = torch.cat([state, action], 1)
+        q1 = F.relu(self.l1(sa))
+        q1 = F.relu(self.l2(q1))
+        q1 = self.l3(q1)
+        q2 = F.relu(self.l4(sa))
+        q2 = F.relu(self.l5(q2))
+        q2 = self.l6(q2)
+        return q1, q2
+
+    def Q1(self, state, action, hidden=None):
+        sa = torch.cat([state, action], 1)
+        q1 = F.relu(self.l1(sa))
+        q1 = F.relu(self.l2(q1))
+        q1 = self.l3(q1)
+        return q1
+
+
+class RNNActor(nn.Module):
     def __init__(self, state_dim, action_dim, hidden_size, max_action):
-        super(Actor, self).__init__()
+        super(RNNActor, self).__init__()
         self.action_dim = action_dim
         self.max_action = max_action
 
-        if Config().algorithm.recurrent_actor:
-            self.l1 = nn.LSTM(state_dim, hidden_size, batch_first=True)
-        else:
-            self.l1 = nn.Linear(state_dim, hidden_size)
-
+        self.l1 = nn.LSTM(state_dim, hidden_size, batch_first=True)
         self.l2 = nn.Linear(hidden_size, hidden_size)
-        if Config().algorithm.recurrent_actor:
-            self.l3 = nn.Linear(hidden_size, 1)
-        else:
-            self.l3 = nn.Linear(hidden_size, action_dim)
+        self.l3 = nn.Linear(hidden_size, action_dim)
 
-    def forward(self, state, hidden):
-        if Config().algorithm.recurrent_actor:
-            if hasattr(Config().clients, 'varied') and Config().clients.varied:
-                # Pad the first state to full dims
-                if len(state) == 1:
-                    pilot = state
-                else:
-                    pilot = state[0]
-                pilot = F.pad(input=pilot,
-                              pad=(0, 0, 0, self.action_dim - pilot.shape[-2]),
-                              mode='constant',
-                              value=0)
-                if len(state) == 1:
-                    state = pilot
-                else:
-                    state[0] = pilot
-                # Pad variable states
-                # Get the length explicitly for later packing sequences
-                lens = list(map(len, state))
-                if len(state) == 1:
-                    state = [torch.squeeze(state)]
-                # Pad and pack
-                padded = pad_sequence(state, batch_first=True)
-                state = pack_padded_sequence(padded,
-                                             lengths=lens,
-                                             batch_first=True,
-                                             enforce_sorted=False)
-            self.l1.flatten_parameters()
-            a, h = self.l1(state, hidden)
-        else:
-            a, h = F.relu(self.l1(state)), None
-
-        # mini-batch update
-        if Config().algorithm.recurrent_actor and hasattr(
-                Config().clients,
-                'varied') and Config().clients.varied and len(state) != 1:
-            a, _ = pad_packed_sequence(a, batch_first=True)
-
-        a = F.relu(self.l2(a))
-        a = torch.tanh(self.l3(a))
-        return self.max_action * a, h
-
-
-class Critic(nn.Module):
-    def __init__(self, state_dim, action_dim, hidden_size):
-        super(Critic, self).__init__()
-        self.action_dim = action_dim
-
-        if Config().algorithm.recurrent_actor:
-            self.l1 = nn.LSTM(state_dim + 1, hidden_size, batch_first=True)
-            self.l4 = nn.LSTM(state_dim + 1, hidden_size, batch_first=True)
-
-        else:
-            self.l1 = nn.Linear(state_dim + action_dim, hidden_size)
-            self.l4 = nn.Linear(state_dim + action_dim, hidden_size)
-
-        # Q1 architecture
-        self.l2 = nn.Linear(hidden_size, hidden_size)
-        self.l3 = nn.Linear(hidden_size, 1)
-
-        # Q2 architecture
-        self.l5 = nn.Linear(hidden_size, hidden_size)
-        self.l6 = nn.Linear(hidden_size, 1)
-
-    def forward(self, state, action, hidden1, hidden2):
-        if Config().algorithm.recurrent_actor and hasattr(
-                Config().clients, 'varied') and Config().clients.varied:
+    def forward(self, state, hidden=None):
+        if hasattr(Config().clients, 'varied') and Config().clients.varied:
             # Pad the first state to full dims
             if len(state) == 1:
                 pilot = state
@@ -192,29 +165,95 @@ class Critic(nn.Module):
             # Pad variable states
             # Get the length explicitly for later packing sequences
             lens = list(map(len, state))
+            state = [state]
+
+            # Pad and pack
+            padded = pad_sequence(state, batch_first=True)
+            packed_state = pack_padded_sequence(padded,
+                                                lengths=lens,
+                                                batch_first=True,
+                                                enforce_sorted=False)
+        self.l1.flatten_parameters()
+        if hasattr(Config().clients, 'varied') and Config().clients.varied:
+            a, h = self.l1(packed_state[0], hidden)
+        else:
+            a, h = self.l1(state, hidden)
+
+        # mini-batch update
+        if hasattr(Config().clients,
+                   'varied') and Config().clients.varied and len(state) != 1:
+            a, _ = pad_packed_sequence(a, batch_first=True)
+
+        a = F.relu(self.l2(a))
+        a = self.max_action * torch.tanh(self.l3(a))
+
+        if hasattr(Config().clients, 'varied') and Config().clients.varied:
+            a = a[0][0].unsqueeze(0).unsqueeze(0)
+
+        return a, h
+
+
+class RNNCritic(nn.Module):
+    def __init__(self, state_dim, action_dim, hidden_size):
+        super(RNNCritic, self).__init__()
+        self.action_dim = action_dim
+
+        # Q1 architecture
+        if hasattr(Config().clients, 'varied') and Config().clients.varied:
+            self.l1 = nn.LSTM(state_dim + 1, hidden_size, batch_first=True)
+        else:
+            self.l1 = nn.LSTM(state_dim + action_dim,
+                              hidden_size,
+                              batch_first=True)
+        self.l2 = nn.Linear(hidden_size, hidden_size)
+        self.l3 = nn.Linear(hidden_size, 1)
+
+        # Q2 architecture
+        if hasattr(Config().clients, 'varied') and Config().clients.varied:
+            self.l4 = nn.LSTM(state_dim + 1, hidden_size, batch_first=True)
+        else:
+            self.l4 = nn.LSTM(state_dim + action_dim,
+                              hidden_size,
+                              batch_first=True)
+        self.l5 = nn.Linear(hidden_size, hidden_size)
+        self.l6 = nn.Linear(hidden_size, 1)
+
+    def forward(self, state, action, hidden1, hidden2):
+        if hasattr(Config().clients, 'varied') and Config().clients.varied:
+            # Pad the first state to full dims
             if len(state) == 1:
-                state = [torch.squeeze(state)]
+                pilot = state
+            else:
+                pilot = state[0]
+            pilot = F.pad(input=pilot,
+                          pad=(0, 0, 0, self.action_dim - pilot.shape[-2]),
+                          mode='constant',
+                          value=0)
+            if len(state) == 1:
+                state = pilot
+            else:
+                state[0] = pilot
+            # Pad variable states
+            # Get the length explicitly for later packing sequences
+            lens = list(map(len, state))
+            state = [state]
+            
             # Pad and pack
             padded = pad_sequence(state, batch_first=True)
             state = padded
         sa = torch.cat([state, action], -1)
 
-        if Config().algorithm.recurrent_actor:
-            if hasattr(Config().clients, 'varied') and Config().clients.varied:
-                sa = pack_padded_sequence(sa,
-                                          lengths=lens,
-                                          batch_first=True,
-                                          enforce_sorted=False)
-            self.l1.flatten_parameters()
-            self.l4.flatten_parameters()
-            q1, hidden1 = self.l1(sa, hidden1)
-            q2, hidden2 = self.l4(sa, hidden2)
-        else:
-            q1, hidden1 = F.relu(self.l1(sa)), None
-            q2, hidden2 = F.relu(self.l4(sa)), None
+        if hasattr(Config().clients, 'varied') and Config().clients.varied:
+            sa = pack_padded_sequence(sa,
+                                      lengths=lens,
+                                      batch_first=True,
+                                      enforce_sorted=False)
+        self.l1.flatten_parameters()
+        self.l4.flatten_parameters()
+        q1, hidden1 = self.l1(sa, hidden1)
+        q2, hidden2 = self.l4(sa, hidden2)
 
-        if Config().algorithm.recurrent_actor and hasattr(
-                Config().clients, 'varied') and Config().clients.varied:
+        if hasattr(Config().clients, 'varied') and Config().clients.varied:
             q1, _ = pad_packed_sequence(q1, batch_first=True)
             q2, _ = pad_packed_sequence(q2, batch_first=True)
 
@@ -229,8 +268,7 @@ class Critic(nn.Module):
         return q1, q2
 
     def Q1(self, state, action, hidden1):
-        if Config().algorithm.recurrent_actor and hasattr(
-                Config().clients, 'varied') and Config().clients.varied:
+        if hasattr(Config().clients, 'varied') and Config().clients.varied:
             # Pad variable states
             # Get the length explicitly for later packing sequences
             lens = list(map(len, state))
@@ -239,19 +277,16 @@ class Critic(nn.Module):
             state = padded
 
         sa = torch.cat([state, action], -1)
-        if Config().algorithm.recurrent_actor:
-            if hasattr(Config().clients, 'varied') and Config().clients.varied:
-                sa = pack_padded_sequence(sa,
-                                          lengths=lens,
-                                          batch_first=True,
-                                          enforce_sorted=False)
-            self.l1.flatten_parameters()
-            q1, hidden1 = self.l1(sa, hidden1)
-        else:
-            q1, hidden1 = F.relu(self.l1(sa)), None
 
-        if Config().algorithm.recurrent_actor and hasattr(
-                Config().clients, 'varied') and Config().clients.varied:
+        if hasattr(Config().clients, 'varied') and Config().clients.varied:
+            sa = pack_padded_sequence(sa,
+                                      lengths=lens,
+                                      batch_first=True,
+                                      enforce_sorted=False)
+        self.l1.flatten_parameters()
+        q1, hidden1 = self.l1(sa, hidden1)
+
+        if hasattr(Config().clients, 'varied') and Config().clients.varied:
             q1, _ = pad_packed_sequence(q1, batch_first=True)
 
         q1 = F.relu(self.l2(q1))
@@ -262,28 +297,43 @@ class Critic(nn.Module):
 
 
 class Policy(base.Policy):
-    def __init__(self, state_dim, action_space):
-        super().__init__(state_dim, action_space)
+    def __init__(self, state_dim, action_dim):
+        super().__init__(state_dim, action_dim)
 
         # Initialize NNs
-        self.actor = Actor(state_dim, action_space.shape[0],
-                           Config().algorithm.hidden_size,
-                           self.max_action).to(self.device)
+        if Config().algorithm.recurrent_actor:
+            self.actor = RNNActor(state_dim, action_dim,
+                                  Config().algorithm.hidden_size,
+                                  self.max_action).to(self.device)
+            self.critic = RNNCritic(state_dim, action_dim,
+                                    Config().algorithm.hidden_size).to(
+                                        self.device)
+        else:
+            self.actor = TD3Actor(state_dim, action_dim,
+                                  self.max_action).to(self.device)
+            self.critic = TD3Critic(state_dim, action_dim).to(self.device)
+
         self.actor_target = copy.deepcopy(self.actor)
         self.actor_optimizer = torch.optim.Adam(
             self.actor.parameters(), lr=Config().algorithm.learning_rate)
 
-        self.critic = Critic(state_dim, action_space.shape[0],
-                             Config().algorithm.hidden_size).to(self.device)
         self.critic_target = copy.deepcopy(self.critic)
         self.critic_optimizer = torch.optim.Adam(
             self.critic.parameters(), lr=Config().algorithm.learning_rate)
 
         # Initialize replay memory
-        self.replay_buffer = ReplayMemory(state_dim, action_space.shape[0],
-                                          Config().algorithm.hidden_size,
-                                          Config().algorithm.replay_size,
-                                          Config().algorithm.replay_seed)
+        if Config().algorithm.recurrent_actor:
+            self.replay_buffer = RNNReplayMemory(
+                state_dim, action_dim,
+                Config().algorithm.hidden_size,
+                Config().algorithm.replay_size,
+                Config().algorithm.replay_seed)
+
+        else:
+            self.replay_buffer = base.ReplayMemory(
+                state_dim, action_dim,
+                Config().algorithm.replay_size,
+                Config().algorithm.replay_seed)
 
         self.policy_noise = Config().algorithm.policy_noise * self.max_action
         self.noise_clip = Config().algorithm.noise_clip * self.max_action
@@ -305,10 +355,19 @@ class Policy(base.Policy):
     # TODO: test=true
     def select_action(self, state, hidden=None, test=False):
         """ Select action from policy. """
-        state = torch.FloatTensor(state).to(self.device).unsqueeze(0)
-
-        action, hidden = self.actor(state, hidden)
-        return action.cpu().data.numpy().flatten(), hidden
+        if Config().algorithm.recurrent_actor:
+            if hasattr(Config().clients, 'varied') and Config().clients.varied:
+                state = torch.FloatTensor(state).to(self.device).unsqueeze(0)
+            else:
+                state = torch.FloatTensor(state.reshape(1, -1)).to(
+                    self.device)[:, None, :]
+            # state = torch.FloatTensor(state).to(self.device).unsqueeze(0)
+            action, hidden = self.actor(state, hidden)
+            return action.cpu().data.numpy().flatten(), hidden
+        else:
+            state = torch.FloatTensor(state.reshape(1, -1)).to(self.device)
+            action = self.actor(state)
+            return action.cpu().data.numpy().flatten()
 
     def update(self):
         """ Update policy. """
@@ -318,10 +377,8 @@ class Policy(base.Policy):
         if Config().algorithm.recurrent_actor:
             state, action, reward, next_state, done, h, c, nh, nc = self.replay_buffer.sample(
             )
-            if hasattr(Config().clients, 'varied') and Config().clients.varied:
-                # Pad variable actions
-                padded = pad_sequence(action, batch_first=True)
-                action = padded
+            # if hasattr(Config().clients, 'varied') and Config().clients.varied:
+            #     state = state[0]
             reward = torch.FloatTensor(reward).to(self.device).unsqueeze(1)
             done = torch.FloatTensor(done).to(self.device).unsqueeze(1)
             hidden = (h, c)
@@ -329,12 +386,11 @@ class Policy(base.Policy):
         else:
             state, action, reward, next_state, done = self.replay_buffer.sample(
             )
-            state = torch.FloatTensor(state).to(self.device).unsqueeze(1)
-            action = torch.FloatTensor(action).to(self.device).unsqueeze(1)
-            reward = torch.FloatTensor(reward).to(self.device).unsqueeze(1)
-            next_state = torch.FloatTensor(next_state).to(
-                self.device).unsqueeze(1)
-            done = torch.FloatTensor(done).to(self.device).unsqueeze(1)
+            state = torch.FloatTensor(state).to(self.device)
+            action = torch.FloatTensor(action).to(self.device)
+            reward = torch.FloatTensor(reward).to(self.device)
+            next_state = torch.FloatTensor(next_state).to(self.device)
+            done = torch.FloatTensor(done).to(self.device)
             hidden, next_hidden = (None, None), (None, None)
 
         with torch.no_grad():
@@ -369,10 +425,14 @@ class Policy(base.Policy):
         # Delayed policy updates
         if self.total_it % Config().algorithm.policy_freq == 0:
 
-            # Compute actor losse
-            actor_loss = -self.critic.Q1(state,
-                                         self.actor(state, hidden)[0],
-                                         hidden).mean()
+            # Compute actor loss
+            if Config().algorithm.recurrent_actor:
+                actor_loss = -self.critic.Q1(state,
+                                             self.actor(state, hidden)[0],
+                                             hidden).mean()
+            else:
+                actor_loss = -self.critic.Q1(state, self.actor(state, hidden),
+                                             hidden).mean()
 
             # Optimize the actor
             self.actor_optimizer.zero_grad()
