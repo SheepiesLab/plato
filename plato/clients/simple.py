@@ -3,7 +3,6 @@ A basic federated learning client who sends weight updates to the server.
 """
 
 import logging
-import time
 from dataclasses import dataclass
 
 import numpy as np
@@ -79,6 +78,10 @@ class Client(base.Client):
                 # self.varied_epochs = np.random.choice([0.5, 0.8, 1.0, 1.25, 2.0])
                 # self.varied_epochs = np.random.choice([0.1, 0.3, 0.5, 0.7, 1.0])
                 self.varied_epochs = np.random.choice([0.1, 0.4, 0.7, 1.0])
+            
+            # Reset dataset
+            self.datasource = None
+            self.load_data()
 
     def load_data(self) -> None:
         """Generating data and loading them onto this client."""
@@ -112,6 +115,7 @@ class Client(base.Client):
                 # Set the sampler for test set
                 self.test_set_sampler = samplers_registry.get(self.datasource,
                                                               self.client_id,
+                                                              self.varied_partition,
                                                               testing=True)
 
     def load_payload(self, server_payload) -> None:

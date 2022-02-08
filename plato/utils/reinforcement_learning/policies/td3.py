@@ -359,7 +359,6 @@ class Policy(base.Policy):
             # c_0 = c_0.to(self.device)
         return (h_0, c_0)
 
-    # TODO: test=true
     def select_action(self, state, hidden=None, test=False):
         """ Select action from policy. """
         if Config().algorithm.recurrent_actor:
