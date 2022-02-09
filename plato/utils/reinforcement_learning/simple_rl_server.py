@@ -18,7 +18,6 @@ from plato.utils import csv_processor
 
 class RLServer(base.Server):
     """ A federated learning server with RL Agent. """
-
     def __init__(self, agent, model=None, algorithm=None, trainer=None):
         super().__init__()
         self.agent = agent
@@ -102,6 +101,7 @@ class RLServer(base.Server):
         """Aggregate weight updates from the clients using smart weighting."""
         # Extract weights udpates from the client updates
         weights_received = self.extract_client_updates(updates)
+        self.update_state()
 
         # Extract the total number of samples
         self.num_samples = [report.num_samples for (report, __, __) in updates]
@@ -116,6 +116,7 @@ class RLServer(base.Server):
         # e.g., wait for the new action from RL agent
         # if the action affects the global aggregation
         self.agent.num_samples = self.num_samples
+        await self.agent.prep_agent_update()
         await self.update_action()
 
         # Use adaptive weighted average
@@ -211,8 +212,6 @@ class RLServer(base.Server):
         """ Wrapping up when each round of training is done. """
         self.save_to_checkpoint()
 
-        self.update_state()
-        await self.agent.prep_agent_update()
         if self.agent.reset_env:
             self.agent.reset_env = False
             self.configure()
