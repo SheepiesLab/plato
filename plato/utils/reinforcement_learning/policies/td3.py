@@ -75,8 +75,7 @@ class RNNReplayMemory:
             state = torch.FloatTensor(self.state[ind]).to(self.device)
             next_state = torch.FloatTensor(self.next_state[ind]).to(
                 self.device)
-            action = torch.FloatTensor(self.action[ind]).to(
-                self.device)
+            action = torch.FloatTensor(self.action[ind]).to(self.device)
         else:
             state = torch.FloatTensor(self.state[ind][:,
                                                       None, :]).to(self.device)
@@ -244,7 +243,7 @@ class RNNCritic(nn.Module):
             # Get the length explicitly for later packing sequences
             lens = list(map(len, state))
             state = [state]
-            
+
             # Pad and pack
             padded = pad_sequence(state, batch_first=True)
             state = padded

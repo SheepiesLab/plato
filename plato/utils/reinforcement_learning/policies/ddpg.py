@@ -60,11 +60,13 @@ class Policy(base.Policy):
             for param, target_param in zip(self.critic.parameters(),
                                            self.critic_target.parameters()):
                 target_param.data.copy_(Config().algorithm.tau * param.data +
-                                        (1 - Config().algorithm.tau) * target_param.data)
+                                        (1 - Config().algorithm.tau) *
+                                        target_param.data)
 
             for param, target_param in zip(self.actor.parameters(),
                                            self.actor_target.parameters()):
                 target_param.data.copy_(Config().algorithm.tau * param.data +
-                                        (1 - Config().algorithm.tau) * target_param.data)
+                                        (1 - Config().algorithm.tau) *
+                                        target_param.data)
 
         return critic_loss.item(), actor_loss.item()
