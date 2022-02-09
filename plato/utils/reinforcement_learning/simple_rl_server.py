@@ -29,9 +29,11 @@ class RLServer(base.Server):
 
         self.testset = None
         self.total_samples = 0
+        self.num_samples = []
 
         self.total_clients = Config().clients.total_clients
         self.clients_per_round = Config().clients.per_round
+        
 
         logging.info(
             "[Server #%d] Started training on %s clients with %s per round.",
