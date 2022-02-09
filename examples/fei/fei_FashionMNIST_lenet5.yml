@@ -45,7 +45,7 @@ trainer:
     rounds: 50
 
     # Whether the training should use multiple GPUs if available
-    parallelized: false
+    parallelized: true
 
     # The maximum number of clients running concurrently
     max_concurrency: 4
@@ -78,7 +78,7 @@ algorithm:
     max_action: 1
     min_action: -1
     max_episode: 2000
-    alpha: 5 # controls the decreasing rate of the mapping function
+    alpha: 5  # controls the decreasing rate of the mapping function
     beta: 20  # coefficient used in reward function
     theta: 0.005  # threshold for stdev(pre_acc)
     base: 1000  # for exponential function in state normalization
@@ -94,7 +94,7 @@ algorithm:
     gamma: 0.99
     tau: 0.005
     learning_rate: 0.0003
-     # Noise added to target policy during critic update
+    # Noise added to target policy during critic update
     policy_noise: 0.25
     # Range to clip target policy noise
     noise_clip: 0.5

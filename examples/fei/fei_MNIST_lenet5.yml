@@ -29,13 +29,13 @@ data:
     partition_size: 600
 
     # Whether use varied partition per client or not?
-    varied: false
+    varied: true
 
     # IID or non-IID?
     sampler: noniid
 
     # The concentration parameter for the Dirichlet distribution
-    # concentration: 0.5
+    concentration: 0.5
 
     # The random seed for sampling data
     random_seed: 1
@@ -45,7 +45,7 @@ trainer:
     rounds: 50
 
     # Whether the training should use multiple GPUs if available
-    parallelized: false
+    parallelized: true
 
     # The maximum number of clients running concurrently
     max_concurrency: 4
@@ -57,7 +57,7 @@ trainer:
     epochs: 10
 
     # Whether use varied epochs per client or not?
-    varied: false
+    varied: true
 
     batch_size: 10
     optimizer: SGD
@@ -78,14 +78,15 @@ algorithm:
     max_action: 1
     min_action: -1
     max_episode: 2000
-    steps_per_episode: 20
+    alpha: 5  # controls the decreasing rate of the mapping function
     beta: 10  # coefficient used in reward function
     theta: 0.005  # threshold for stdev(pre_acc)
+    base: 1000  # for exponential function in state normalization
     log_interval: 10
-    mode: test  # test
-    pretrained: true
-    pretrained_iter: 300
-    test_step: 50
+    mode: train  # test
+    pretrained: false
+    pretrained_iter: 0
+    test_step: 20
 
     # RL policy
     model_name: td3
@@ -93,8 +94,7 @@ algorithm:
     gamma: 0.99
     tau: 0.005
     learning_rate: 0.0003
-    seed: 1234
-     # Noise added to target policy during critic update
+    # Noise added to target policy during critic update
     policy_noise: 0.25
     # Range to clip target policy noise
     noise_clip: 0.5
@@ -104,18 +104,18 @@ algorithm:
     batch_size: 64
     hidden_size: 256
     # steps sampling random actions
-    start_steps: 32
+    start_steps: 4
     # replay buffer size
     replay_size: 10000
+    replay_seed: 1234
     # whether use LSTM or FC nets
-    recurrent_actor: true
+    recurrent_actor: false
 
 results:
     # Write the following parameter(s) into a CSV
-    types: accuracy, training_time, round_time
+    types: accuracy, elapsed_time, round_time
 
-    # Plot results (x_axis&y_axis)
-    plot: round&accuracy, round&training_time, round_time&accuracy, round_time&training_time
+    # Plot results (x_axis-y_axis)
+    plot: round-accuracy, round-elapsed_time
 
-    
 
