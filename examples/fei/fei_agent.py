@@ -15,6 +15,8 @@ from plato.utils.reinforcement_learning.policies import \
     registry as policies_registry
 
 
+os.environ['config_file'] = 'examples/fei/fei_FashionMNIST_lenet5.yml'
+
 class RLAgent(simple_rl_agent.RLAgent):
     """ An RL agent for FL training using FEI. """
     def __init__(self):
